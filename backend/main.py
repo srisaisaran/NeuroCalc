@@ -2,7 +2,8 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()
-from fastapi import FastAPI, Depends
+
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -12,6 +13,8 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 import json
+import hashlib
+import secrets
 
 from intent_router import IntentRouter
 
@@ -24,6 +27,7 @@ from database.database import (
 from database.models import (
     Conversation,
     Message,
+    User,
 )
 
 
@@ -77,7 +81,7 @@ intent_router = IntentRouter()
 
 
 # ============================================================
-# REQUEST MODEL
+# CHAT REQUEST MODEL
 # ============================================================
 
 class ChatRequest(BaseModel):
@@ -85,6 +89,88 @@ class ChatRequest(BaseModel):
     message: str
 
     conversation_id: Optional[int] = None
+
+
+# ============================================================
+# SIGNUP REQUEST MODEL
+# ============================================================
+
+class SignupRequest(BaseModel):
+
+    name: str
+
+    email: str
+
+    password: str
+
+
+# ============================================================
+# LOGIN REQUEST MODEL
+# ============================================================
+
+class LoginRequest(BaseModel):
+
+    email: str
+
+    password: str
+
+
+# ============================================================
+# PASSWORD HASHING
+# ============================================================
+
+def hash_password(password: str) -> str:
+
+    salt = secrets.token_bytes(16)
+
+    password_hash = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        100000,
+    )
+
+    return (
+        salt.hex()
+        + ":"
+        + password_hash.hex()
+    )
+
+
+def verify_password(
+    password: str,
+    stored_password: str,
+) -> bool:
+
+    try:
+
+        salt_hex, hash_hex = (
+            stored_password.split(":")
+        )
+
+        salt = bytes.fromhex(
+            salt_hex
+        )
+
+        stored_hash = bytes.fromhex(
+            hash_hex
+        )
+
+        password_hash = hashlib.pbkdf2_hmac(
+            "sha256",
+            password.encode("utf-8"),
+            salt,
+            100000,
+        )
+
+        return secrets.compare_digest(
+            password_hash,
+            stored_hash,
+        )
+
+    except Exception:
+
+        return False
 
 
 # ============================================================
@@ -114,6 +200,210 @@ def test():
 
 
 # ============================================================
+# SIGNUP
+# ============================================================
+
+@app.post("/signup")
+def signup(
+    request: SignupRequest,
+    db: Session = Depends(get_db),
+):
+
+    name = request.name.strip()
+
+    email = request.email.strip().lower()
+
+    password = request.password
+
+
+    # --------------------------------------------------------
+    # VALIDATION
+    # --------------------------------------------------------
+
+    if not name:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Name is required",
+        )
+
+
+    if not email:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Email is required",
+        )
+
+
+    if len(password) < 6:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 6 characters",
+        )
+
+
+    # --------------------------------------------------------
+    # CHECK EXISTING USER
+    # --------------------------------------------------------
+
+    existing_user = (
+
+        db.query(User)
+
+        .filter(
+            User.email == email
+        )
+
+        .first()
+    )
+
+
+    if existing_user:
+
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered",
+        )
+
+
+    # --------------------------------------------------------
+    # CREATE USER
+    # --------------------------------------------------------
+
+    hashed_password = hash_password(
+        password
+    )
+
+
+    user = User(
+
+        name=name,
+
+        email=email,
+
+        password=hashed_password,
+    )
+
+
+    db.add(user)
+
+    db.commit()
+
+    db.refresh(user)
+
+
+    print()
+    print("========================================")
+    print("NEW USER REGISTERED")
+    print("NAME:", name)
+    print("EMAIL:", email)
+    print("USER ID:", user.id)
+    print("========================================")
+
+
+    return {
+
+        "success": True,
+
+        "message": "Account created successfully",
+
+        "user": {
+
+            "id": user.id,
+
+            "name": user.name,
+
+            "email": user.email,
+
+        },
+
+    }
+
+
+# ============================================================
+# LOGIN
+# ============================================================
+
+@app.post("/login")
+def login(
+    request: LoginRequest,
+    db: Session = Depends(get_db),
+):
+
+    email = request.email.strip().lower()
+
+    password = request.password
+
+
+    # --------------------------------------------------------
+    # FIND USER
+    # --------------------------------------------------------
+
+    user = (
+
+        db.query(User)
+
+        .filter(
+            User.email == email
+        )
+
+        .first()
+    )
+
+
+    # --------------------------------------------------------
+    # VERIFY USER
+    # --------------------------------------------------------
+
+    if user is None:
+
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password",
+        )
+
+
+    if not verify_password(
+        password,
+        user.password,
+    ):
+
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password",
+        )
+
+
+    print()
+    print("========================================")
+    print("USER LOGIN")
+    print("EMAIL:", email)
+    print("USER ID:", user.id)
+    print("========================================")
+
+
+    return {
+
+        "success": True,
+
+        "message": "Login successful",
+
+        "user": {
+
+            "id": user.id,
+
+            "name": user.name,
+
+            "email": user.email,
+
+        },
+
+    }
+
+
+# ============================================================
 # NORMAL CHAT
 # ============================================================
 
@@ -125,6 +415,7 @@ def chat(
 
     message = request.message.strip()
 
+
     # --------------------------------------------------------
     # EMPTY MESSAGE
     # --------------------------------------------------------
@@ -132,9 +423,15 @@ def chat(
     if not message:
 
         return {
-            "response": "Please enter a message.",
-            "conversation_id": request.conversation_id,
+
+            "response":
+                "Please enter a message.",
+
+            "conversation_id":
+                request.conversation_id,
+
         }
+
 
     print()
     print("========================================")
@@ -146,22 +443,28 @@ def chat(
     )
     print("========================================")
 
+
     # ========================================================
     # FIND EXISTING CONVERSATION
     # ========================================================
 
     conversation = None
 
+
     if request.conversation_id is not None:
 
         conversation = (
+
             db.query(Conversation)
+
             .filter(
                 Conversation.id
                 == request.conversation_id
             )
+
             .first()
         )
+
 
     # ========================================================
     # CREATE NEW CONVERSATION
@@ -170,8 +473,10 @@ def chat(
     if conversation is None:
 
         conversation = Conversation(
+
             title=message[:35]
         )
+
 
         db.add(conversation)
 
@@ -179,14 +484,15 @@ def chat(
 
         db.refresh(conversation)
 
+
         print(
             "Created conversation:",
             conversation.id
         )
 
-        # Reset AI memory for new conversation
 
         intent_router.reset_history()
+
 
     # ========================================================
     # SAVE USER MESSAGE
@@ -201,9 +507,11 @@ def chat(
         content=message,
     )
 
+
     db.add(user_message)
 
     db.commit()
+
 
     # ========================================================
     # PROCESS MESSAGE
@@ -213,11 +521,13 @@ def chat(
         "Processing message..."
     )
 
+
     try:
 
         answer = intent_router.process(
             message
         )
+
 
     except Exception as e:
 
@@ -226,15 +536,18 @@ def chat(
             e
         )
 
+
         answer = (
             "Sorry, I encountered an error "
             "while processing your request."
         )
 
+
     print(
         "FINAL RESPONSE:",
         answer
     )
+
 
     # ========================================================
     # SAVE ASSISTANT RESPONSE
@@ -249,9 +562,11 @@ def chat(
         content=answer,
     )
 
+
     db.add(assistant_message)
 
     db.commit()
+
 
     # ========================================================
     # RETURN
@@ -278,6 +593,7 @@ def stream_chat(
 
     message = request.message.strip()
 
+
     # ========================================================
     # EMPTY MESSAGE
     # ========================================================
@@ -287,18 +603,27 @@ def stream_chat(
         def empty_stream():
 
             data = {
-                "type": "error",
-                "message": "Please enter a message.",
+
+                "type":
+                    "error",
+
+                "message":
+                    "Please enter a message.",
             }
+
 
             yield (
                 f"data: {json.dumps(data)}\n\n"
             )
 
+
         return StreamingResponse(
+
             empty_stream(),
+
             media_type="text/event-stream",
         )
+
 
     print()
     print("========================================")
@@ -310,22 +635,28 @@ def stream_chat(
     )
     print("========================================")
 
+
     # ========================================================
     # FIND EXISTING CONVERSATION
     # ========================================================
 
     conversation = None
 
+
     if request.conversation_id is not None:
 
         conversation = (
+
             db.query(Conversation)
+
             .filter(
                 Conversation.id
                 == request.conversation_id
             )
+
             .first()
         )
+
 
     # ========================================================
     # CREATE NEW CONVERSATION
@@ -334,8 +665,10 @@ def stream_chat(
     if conversation is None:
 
         conversation = Conversation(
+
             title=message[:35]
         )
+
 
         db.add(conversation)
 
@@ -343,14 +676,15 @@ def stream_chat(
 
         db.refresh(conversation)
 
+
         print(
             "Created conversation:",
             conversation.id
         )
 
-        # Reset AI memory
 
         intent_router.reset_history()
+
 
     # ========================================================
     # SAVE USER MESSAGE
@@ -365,13 +699,17 @@ def stream_chat(
         content=message,
     )
 
+
     db.add(user_message)
 
     db.commit()
 
+
     print(
         "User message saved."
     )
+
+
     # ========================================================
     # STREAM GENERATOR
     # ========================================================
@@ -380,50 +718,105 @@ def stream_chat(
 
         try:
 
-            print("Starting AI processing...")
-            answer = intent_router.process(message)
+            print(
+                "Starting AI processing..."
+            )
+
+
+            answer = intent_router.process(
+                message
+            )
+
+
             full_response = answer
-            print("AI RESPONSE:", repr(answer))
+
+
+            print(
+                "AI RESPONSE:",
+                repr(answer)
+            )
+
 
             data = {
-                "type": "chunk",
-                "content": answer,
+
+                "type":
+                    "chunk",
+
+                "content":
+                    answer,
             }
 
-            yield f"data: {json.dumps(data)}\n\n"
+
+            yield (
+                f"data: {json.dumps(data)}\n\n"
+            )
+
 
             assistant_message = Message(
+
                 conversation_id=conversation.id,
+
                 sender="assistant",
+
                 content=full_response,
             )
 
+
             db.add(assistant_message)
+
             db.commit()
 
-            print("Assistant response saved.")
+
+            print(
+                "Assistant response saved."
+            )
+
 
             done_data = {
-                "type": "done",
-                "conversation_id": conversation.id,
+
+                "type":
+                    "done",
+
+                "conversation_id":
+                    conversation.id,
             }
 
-            yield f"data: {json.dumps(done_data)}\n\n"
 
-            print("STREAM COMPLETED")
+            yield (
+                f"data: {json.dumps(done_data)}\n\n"
+            )
+
+
+            print(
+                "STREAM COMPLETED"
+            )
+
 
         except Exception as e:
 
-            print("STREAM ERROR:", e)
+            print(
+                "STREAM ERROR:",
+                e
+            )
+
 
             db.rollback()
 
+
             error_data = {
-                "type": "error",
-                "message": str(e),
+
+                "type":
+                    "error",
+
+                "message":
+                    str(e),
             }
 
-            yield f"data: {json.dumps(error_data)}\n\n"
+
+            yield (
+                f"data: {json.dumps(error_data)}\n\n"
+            )
+
 
     # ========================================================
     # RETURN STREAM
@@ -437,15 +830,19 @@ def stream_chat(
 
         headers={
 
-            "Cache-Control": "no-cache",
+            "Cache-Control":
+                "no-cache",
 
-            "Connection": "keep-alive",
+            "Connection":
+                "keep-alive",
 
-            "X-Accel-Buffering": "no",
+            "X-Accel-Buffering":
+                "no",
 
         },
 
     )
+
 
 # ============================================================
 # GET CONVERSATION MESSAGES
@@ -480,6 +877,7 @@ def get_messages(
         .all()
     )
 
+
     return [
 
         {
@@ -510,24 +908,42 @@ def get_messages(
 
 @app.get("/conversations")
 def get_conversations(
+
     db: Session = Depends(get_db),
+
 ):
 
     conversations = (
+
         db.query(Conversation)
+
         .order_by(
+
             Conversation.created_at.desc()
         )
+
         .all()
     )
 
+
     return [
+
         {
-            "id": conversation.id,
-            "title": conversation.title,
-            "created_at": conversation.created_at,
+
+            "id":
+                conversation.id,
+
+            "title":
+                conversation.title,
+
+            "created_at":
+                conversation.created_at,
+
         }
-        for conversation in conversations
+
+        for conversation
+        in conversations
+
     ]
 
 
@@ -560,6 +976,7 @@ def delete_conversation(
         .first()
     )
 
+
     # ========================================================
     # NOT FOUND
     # ========================================================
@@ -575,6 +992,7 @@ def delete_conversation(
                 "Conversation not found",
 
         }
+
 
     # ========================================================
     # DELETE MESSAGES
@@ -595,6 +1013,7 @@ def delete_conversation(
 
     )
 
+
     # ========================================================
     # DELETE CONVERSATION
     # ========================================================
@@ -603,7 +1022,9 @@ def delete_conversation(
         conversation
     )
 
+
     db.commit()
+
 
     return {
 
@@ -614,8 +1035,8 @@ def delete_conversation(
             "Conversation deleted",
 
     }
-    
-    
+
+
 # ============================================================
 # START SERVER
 # ============================================================
@@ -625,8 +1046,12 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
+
         "main:app",
+
         host="127.0.0.1",
+
         port=8000,
+
         reload=True
     )

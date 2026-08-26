@@ -596,6 +596,7 @@ export default function ChatWindow({
         flex
         flex-col
         min-h-0
+        bg-[#09090b]
       "
     >
 
@@ -608,6 +609,7 @@ export default function ChatWindow({
           flex-1
           overflow-y-auto
           p-8
+          bg-[#09090b]
         "
       >
 
@@ -615,6 +617,7 @@ export default function ChatWindow({
           className="
             max-w-4xl
             mx-auto
+            w-full
           "
         >
 

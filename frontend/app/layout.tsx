@@ -2,7 +2,7 @@ import "./globals.css";
 
 export const metadata = {
   title: "NeuroCalc",
-  description: "AI-powered calculator and intelligent assistant",
+  description: "NeuroCalc: Think. Solve. Learn.",
 };
 
 export default function RootLayout({

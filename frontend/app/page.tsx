@@ -1,120 +1,241 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
-import Sidebar from "@/components/Sidebar";
-import Header from "@/components/Header";
-import ChatWindow from "@/components/ChatWindow";
+export default function LoginPage() {
+  const router = useRouter();
 
-// ============================================================
-// HOME
-// ============================================================
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
-export default function Home() {
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const [
-    conversationId,
-    setConversationId,
-  ] = useState<number | null>(null);
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-  // ==========================================================
-  // SELECT CONVERSATION
-  // ==========================================================
+    setError("");
+    setLoading(true);
 
-  const handleConversationSelect = (
-    id: number
-  ) => {
+    try {
+      const response = await fetch(
+        "http://127.0.0.1:8000/login",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            password,
+          }),
+        }
+      );
 
-    console.log(
-      "Selected conversation:",
-      id
-    );
+      const data = await response.json();
 
-    setConversationId(id);
+      if (!response.ok) {
+        throw new Error(
+          data.detail || "Invalid email or password."
+        );
+      }
 
+      localStorage.setItem(
+        "neurocalc_user",
+        JSON.stringify(data.user)
+      );
+
+      router.push("/chat");
+
+    } catch (error) {
+      if (error instanceof Error) {
+        setError(error.message);
+      } else {
+        setError("Something went wrong.");
+      }
+    } finally {
+      setLoading(false);
+    }
   };
-
-  // ==========================================================
-  // NEW CHAT
-  // ==========================================================
-
-  const handleNewChat = () => {
-
-    console.log(
-      "Starting new chat"
-    );
-
-    setConversationId(null);
-
-  };
-
-  // ==========================================================
-  // UI
-  // ==========================================================
 
   return (
+    <main className="login-page">
 
-    <main
-      className="
-        h-screen
-        bg-[#171717]
-        text-white
-        flex
-        overflow-hidden
-      "
-    >
+      <div className="background-glow glow-one" />
+      <div className="background-glow glow-two" />
 
-      {/* ====================================================
-          SIDEBAR
-      ==================================================== */}
+      <div className="login-container">
 
-      <Sidebar
+        {/* LOGO */}
+        <div className="logo-wrapper">
+          <div className="logo">
+            🧠
+          </div>
+        </div>
 
-        selectedConversationId={
-          conversationId
-        }
+        {/* TITLE */}
+        <h1 className="login-title">
+          Welcome back
+        </h1>
 
-        onConversationSelect={
-          handleConversationSelect
-        }
+        <p className="login-subtitle">
+          Sign in to continue with{" "}
+          <span>NeuroCalc</span>
+        </p>
 
-        onNewChat={
-          handleNewChat
-        }
+        {/* LOGIN CARD */}
+        <div className="login-card">
 
-      />
+          <form onSubmit={handleLogin}>
 
-      {/* ====================================================
-          MAIN CONTENT
-      ==================================================== */}
+            {/* EMAIL */}
+            <div className="input-group">
 
-      <section
-        className="
-          flex-1
-          flex
-          flex-col
-          min-w-0
-        "
-      >
+              <label htmlFor="email">
+                Email
+              </label>
 
-        <Header />
+              <div className="input-wrapper">
 
-        <ChatWindow
+                <span className="input-icon">
+                  ✉
+                </span>
 
-          conversationId={
-            conversationId
-          }
+                <input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) =>
+                    setEmail(e.target.value)
+                  }
+                  required
+                />
 
-          onConversationCreated={
-            setConversationId
-          }
+              </div>
 
-        />
+            </div>
 
-      </section>
+            {/* PASSWORD */}
+            <div className="input-group">
+
+              <div className="password-label">
+
+                <label htmlFor="password">
+                  Password
+                </label>
+
+                <button
+                  type="button"
+                  className="forgot-button"
+                  onClick={() =>
+                    setError(
+                      "Password reset will be available soon."
+                    )
+                  }
+                >
+                  Forgot password?
+                </button>
+
+              </div>
+
+              <div className="input-wrapper">
+
+                <span className="input-icon">
+                  🔒
+                </span>
+
+                <input
+                  id="password"
+                  type={
+                    showPassword
+                      ? "text"
+                      : "password"
+                  }
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) =>
+                    setPassword(e.target.value)
+                  }
+                  required
+                />
+
+                <button
+                  type="button"
+                  className="password-toggle"
+                  onClick={() =>
+                    setShowPassword(!showPassword)
+                  }
+                >
+                  {showPassword ? "🙈" : "👁️"}
+                </button>
+
+              </div>
+
+            </div>
+
+            {/* ERROR */}
+            {error && (
+              <div className="login-error">
+                <span>⚠</span>
+                {error}
+              </div>
+            )}
+
+            {/* LOGIN BUTTON */}
+            <button
+              type="submit"
+              className="login-button"
+              disabled={loading}
+            >
+              {loading ? (
+                <>
+                  <span className="spinner" />
+                  Signing in...
+                </>
+              ) : (
+                <>
+                  Sign In
+                  <span className="arrow">
+                    →
+                  </span>
+                </>
+              )}
+            </button>
+
+          </form>
+
+          {/* DIVIDER */}
+          <div className="divider">
+            <span>OR</span>
+          </div>
+
+          {/* SIGNUP */}
+          <p className="signup-text">
+            Don't have an account?
+          </p>
+
+          <Link
+            href="/signup"
+            className="signup-button"
+          >
+            Create your NeuroCalc account
+          </Link>
+
+        </div>
+
+        {/* FOOTER */}
+        <p className="login-footer">
+          🧠 NeuroCalc
+          <span>•</span>
+          NeuroCalc: Think. Solve. Learn.
+        </p>
+
+      </div>
 
     </main>
-
   );
-
 }
