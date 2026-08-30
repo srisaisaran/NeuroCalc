@@ -1,8 +1,20 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    Text,
+    DateTime,
+    Boolean,
+)
+
 from sqlalchemy.sql import func
 
 from database.database import Base
 
+
+# ==========================================================
+# CONVERSATIONS
+# ==========================================================
 
 class Conversation(Base):
     __tablename__ = "conversations"
@@ -19,6 +31,10 @@ class Conversation(Base):
         server_default=func.now()
     )
 
+
+# ==========================================================
+# MESSAGES
+# ==========================================================
 
 class Message(Base):
     __tablename__ = "messages"
@@ -47,6 +63,10 @@ class Message(Base):
     )
 
 
+# ==========================================================
+# USERS
+# ==========================================================
+
 class User(Base):
     __tablename__ = "users"
 
@@ -72,6 +92,28 @@ class User(Base):
         String(255),
         nullable=False
     )
+
+    # ------------------------------------------
+    # Email Verification
+    # ------------------------------------------
+
+    is_verified = Column(
+        Boolean,
+        default=False,
+        nullable=False
+    )
+
+    otp = Column(
+        String(6),
+        nullable=True
+    )
+
+    otp_expiry = Column(
+        DateTime,
+        nullable=True
+    )
+
+    # ------------------------------------------
 
     created_at = Column(
         DateTime,

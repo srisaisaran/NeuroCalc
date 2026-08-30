@@ -1,9 +1,41 @@
-__pycache__/ 
-*.pyc 
-.venv/ 
-venv/ 
-frontend/node_modules/ 
-frontend/.next/ 
-backend/neurocalc.db 
-backend/neurocalc.db 
-backend/neurocalc.db 
+# ==========================
+# Python
+# ==========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environment
+.venv/
+venv/
+
+# Environment Variables
+.env
+
+# Database
+backend/neurocalc.db
+*.db-journal
+
+# ==========================
+# Node / Next.js
+# ==========================
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# ==========================
+# VS Code
+# ==========================
+.vscode/
+
+# ==========================
+# Logs
+# ==========================
+*.log
+
+# ==========================
+# OS Files
+# ==========================
+.DS_Store
+Thumbs.db

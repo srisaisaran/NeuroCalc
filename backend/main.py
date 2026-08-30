@@ -1,5 +1,7 @@
 from dotenv import load_dotenv
 import os
+import random
+from datetime import datetime, timedelta
 
 load_dotenv()
 
@@ -7,9 +9,10 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
+from email_service import send_test_email
+
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-
 from typing import Optional
 
 import json
@@ -103,7 +106,6 @@ class SignupRequest(BaseModel):
 
     password: str
 
-
 # ============================================================
 # LOGIN REQUEST MODEL
 # ============================================================
@@ -114,6 +116,194 @@ class LoginRequest(BaseModel):
 
     password: str
 
+
+# ============================================================
+# VERIFY OTP REQUEST MODEL
+# ============================================================
+
+class VerifyOTPRequest(BaseModel):
+
+    email: str
+
+    otp: str
+
+
+# ============================================================
+# FORGOT PASSWORD REQUEST MODEL
+# ============================================================
+
+class ForgotPasswordRequest(BaseModel):
+
+    email: str
+
+
+# ============================================================
+# RESET PASSWORD REQUEST MODEL
+# ============================================================
+
+class ResetPasswordRequest(BaseModel):
+
+    email: str
+
+    otp: str
+
+    new_password: str
+
+# ============================================================
+# VERIFY OTP
+# ============================================================
+
+@app.post("/verify-otp")
+def verify_otp(
+    request: VerifyOTPRequest,
+    db: Session = Depends(get_db),
+):
+
+    email = request.email.strip().lower()
+
+    user = (
+        db.query(User)
+        .filter(User.email == email)
+        .first()
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    if user.otp != request.otp:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid OTP"
+        )
+
+    if user.otp_expiry is None:
+        raise HTTPException(
+            status_code=400,
+            detail="OTP expired"
+        )
+
+    if datetime.utcnow() > user.otp_expiry:
+        raise HTTPException(
+            status_code=400,
+            detail="OTP expired"
+        )
+
+    user.is_verified = True
+    user.otp = None
+    user.otp_expiry = None
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Email verified successfully."
+    }
+
+
+# ============================================================
+# FORGOT PASSWORD
+# ============================================================
+
+@app.post("/forgot-password")
+def forgot_password(
+    request: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+
+    email = request.email.strip().lower()
+
+    user = (
+        db.query(User)
+        .filter(User.email == email)
+        .first()
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No account found with this email."
+        )
+
+    otp = str(random.randint(100000, 999999))
+
+    user.otp = otp
+    user.otp_expiry = datetime.utcnow() + timedelta(minutes=10)
+
+    db.commit()
+
+    send_test_email(email, otp)
+
+    return {
+        "success": True,
+        "message": "Password reset OTP sent successfully."
+    }
+
+# ============================================================
+# RESET PASSWORD
+# ============================================================
+
+@app.post("/reset-password")
+def reset_password(
+    request: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+):
+
+    email = request.email.strip().lower()
+
+    user = (
+        db.query(User)
+        .filter(User.email == email)
+        .first()
+    )
+
+    if user is None:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found."
+        )
+
+    if user.otp != request.otp:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid OTP."
+        )
+
+    if user.otp_expiry is None or datetime.utcnow() > user.otp_expiry:
+        raise HTTPException(
+            status_code=400,
+            detail="OTP has expired."
+        )
+
+    if len(request.new_password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 6 characters."
+        )
+
+    user.password = hash_password(request.new_password)
+
+    user.otp = None
+    user.otp_expiry = None
+
+    db.commit()
+
+    return {
+        "success": True,
+        "message": "Password reset successful."
+    }
+
+# ============================================================
+# LOGIN REQUEST MODEL
+# ============================================================
+
+class LoginRequest(BaseModel):
+
+    email: str
+
+    password: str
 
 # ============================================================
 # PASSWORD HASHING
@@ -210,115 +400,110 @@ def signup(
 ):
 
     name = request.name.strip()
-
     email = request.email.strip().lower()
-
     password = request.password
-
 
     # --------------------------------------------------------
     # VALIDATION
     # --------------------------------------------------------
 
     if not name:
-
         raise HTTPException(
             status_code=400,
             detail="Name is required",
         )
 
-
     if not email:
-
         raise HTTPException(
             status_code=400,
             detail="Email is required",
         )
 
-
     if len(password) < 6:
-
         raise HTTPException(
             status_code=400,
             detail="Password must be at least 6 characters",
         )
-
 
     # --------------------------------------------------------
     # CHECK EXISTING USER
     # --------------------------------------------------------
 
     existing_user = (
-
         db.query(User)
-
-        .filter(
-            User.email == email
-        )
-
+        .filter(User.email == email)
         .first()
     )
 
-
     if existing_user:
-
         raise HTTPException(
             status_code=400,
             detail="Email already registered",
         )
 
+    # --------------------------------------------------------
+    # GENERATE OTP
+    # --------------------------------------------------------
+
+    otp = str(random.randint(100000, 999999))
+
+    otp_expiry = datetime.utcnow() + timedelta(minutes=10)
 
     # --------------------------------------------------------
     # CREATE USER
     # --------------------------------------------------------
 
-    hashed_password = hash_password(
-        password
-    )
-
+    hashed_password = hash_password(password)
 
     user = User(
-
         name=name,
-
         email=email,
-
         password=hashed_password,
+        is_verified=False,
+        otp=otp,
+        otp_expiry=otp_expiry,
     )
 
-
     db.add(user)
-
     db.commit()
-
     db.refresh(user)
 
+    # --------------------------------------------------------
+    # SEND EMAIL
+    # --------------------------------------------------------
+
+    try:
+
+
+        send_test_email(email, otp)
+
+       
+
+    except Exception as e:
+
+        print("EMAIL ERROR:", e)
+
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to send verification email."
+        )
 
     print()
     print("========================================")
     print("NEW USER REGISTERED")
     print("NAME:", name)
     print("EMAIL:", email)
-    print("USER ID:", user.id)
+    print("OTP:", otp)
     print("========================================")
 
-
     return {
-
         "success": True,
-
-        "message": "Account created successfully",
-
+        "message": "Account created successfully. Please check your email for the verification code.",
         "user": {
-
             "id": user.id,
-
             "name": user.name,
-
             "email": user.email,
-
         },
-
     }
 
 
@@ -1042,7 +1227,6 @@ def delete_conversation(
 # ============================================================
 
 if __name__ == "__main__":
-
     import uvicorn
 
     uvicorn.run(
@@ -1055,3 +1239,4 @@ if __name__ == "__main__":
 
         reload=True
     )
+ 

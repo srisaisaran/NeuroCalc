@@ -2,11 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
-export default function LoginPage() {
-  const router = useRouter();
-
+export default function SignupPage() {
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -22,13 +20,14 @@ export default function LoginPage() {
 
     try {
       const response = await fetch(
-        "http://127.0.0.1:8000/login",
+        "http://127.0.0.1:8000/signup",
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            name,
             email,
             password,
           }),
@@ -43,13 +42,17 @@ export default function LoginPage() {
         );
       }
 
-      localStorage.setItem(
-        "neurocalc_user",
-        JSON.stringify(data.user)
-      );
+     localStorage.setItem(
+  "neurocalc_user",
+  JSON.stringify(data.user)
+);
 
-      router.push("/chat");
+localStorage.setItem(
+  "verification_email",
+  data.user.email
+);
 
+window.location.assign("/verify-otp");
     } catch (error) {
       if (error instanceof Error) {
         setError(error.message);
@@ -79,11 +82,11 @@ export default function LoginPage() {
 
         {/* Heading */}
         <h1 className="login-title">
-          Welcome back
+          Create your account
         </h1>
 
         <p className="login-subtitle">
-          Sign in to continue with{" "}
+          Get started with{" "}
           <span>NeuroCalc</span>
         </p>
 
@@ -91,6 +94,34 @@ export default function LoginPage() {
         <div className="login-card">
 
           <form onSubmit={handleLogin}>
+
+            {/* Name */}
+            <div className="input-group">
+
+              <label htmlFor="name">
+                Name
+              </label>
+
+              <div className="input-wrapper">
+
+                <span className="input-icon">
+                  👤
+                </span>
+
+                <input
+                  id="name"
+                  type="text"
+                  placeholder="Your name"
+                  value={name}
+                  onChange={(e) =>
+                    setName(e.target.value)
+                  }
+                  required
+                />
+
+              </div>
+
+            </div>
 
             {/* Email */}
             <div className="input-group">
@@ -187,7 +218,7 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Login */}
+            {/* Signup */}
             <button
               type="submit"
               className="login-button"
@@ -196,11 +227,11 @@ export default function LoginPage() {
               {loading ? (
                 <>
                   <span className="spinner" />
-                  Signing in...
+                  Creating account...
                 </>
               ) : (
                 <>
-                  Sign In
+                  Create Account
                   <span className="arrow">
                     →
                   </span>
@@ -215,16 +246,16 @@ export default function LoginPage() {
             <span>OR</span>
           </div>
 
-          {/* Signup */}
+          {/* Login */}
           <p className="signup-text">
-            Don't have an account?
+            Already have an account?
           </p>
 
           <Link
-            href="/signup"
+            href="/"
             className="signup-button"
           >
-            Create your NeuroCalc account
+            Sign in to NeuroCalc
           </Link>
 
         </div>
